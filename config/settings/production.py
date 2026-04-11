@@ -13,6 +13,9 @@ SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 X_FRAME_OPTIONS = "DENY"
 
+SECURE_SSL_REDIRECT = False
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 # ── AWS S3 for media files ─────────────────────────────────────────────────
 DEFAULT_FILE_STORAGE = "apps.uploads.storage_backends.MediaStorage"
 STATICFILES_STORAGE = "apps.uploads.storage_backends.StaticStorage"
