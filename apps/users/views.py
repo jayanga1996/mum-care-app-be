@@ -7,21 +7,24 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import User, UserRole
+from .models import OTPVerification, User, UserRole
 from .serializers import (
     ApproveUserSerializer,
     ChangePasswordSerializer,
     RegisterSerializer,
+    ResendOTPSerializer,
     UserDetailSerializer,
     UserPublicSerializer,
+    VerifyOTPSerializer,
 )
+from .utils import send_otp_email
 
 
 class RegisterView(generics.CreateAPIView):
     """
     POST /api/users/register/
-    Open endpoint – anyone can register.
-    Family member registrations skip the approval workflow.
+    Open endpoint – creates account (inactive) and sends OTP to email.
+    Family member registrations skip the approval workflow but still need OTP.
     """
 
     serializer_class = RegisterSerializer
@@ -32,14 +35,76 @@ class RegisterView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user: User = serializer.save()
 
-        # Family members are auto-approved (no midwife/sister approval needed)
+        # Account inactive until email OTP is verified
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+
+        # Generate OTP and send email
+        otp = OTPVerification.create_for_user(user)
+        try:
+            send_otp_email(user.email, user.full_name, otp.code)
+        except Exception:
+            # Don't block registration if email fails; OTP still stored
+            pass
+
+        return Response(
+            {
+                "detail": "Registration successful. Please check your email for the verification code.",
+                "email": user.email,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class VerifyOTPView(APIView):
+    """
+    POST /api/users/verify-otp/
+    Verify the OTP sent during registration and activate the account.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = VerifyOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user: User = serializer.save()
+
+        # Auto-approve family members
         if user.role == UserRole.FAMILY:
             user.is_approved = True
             user.save(update_fields=["is_approved"])
 
         return Response(
-            UserDetailSerializer(user).data,
-            status=status.HTTP_201_CREATED,
+            {
+                "detail": "Email verified successfully. Your account is now active.",
+                "user": UserDetailSerializer(user).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ResendOTPView(APIView):
+    """
+    POST /api/users/resend-otp/
+    Resend OTP to the given email address (only for inactive/unverified accounts).
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = ResendOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user: User = serializer.save()
+
+        otp = OTPVerification.create_for_user(user)
+        try:
+            send_otp_email(user.email, user.full_name, otp.code)
+        except Exception:
+            pass
+
+        return Response(
+            {"detail": "A new verification code has been sent to your email."},
+            status=status.HTTP_200_OK,
         )
 
 

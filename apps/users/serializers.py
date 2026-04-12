@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.areas.serializers import PHMAreaSerializer
-from .models import User, UserRole
+from .models import OTPVerification, User, UserRole
 
 
 class UserPublicSerializer(serializers.ModelSerializer):
@@ -113,3 +113,61 @@ class ChangePasswordSerializer(serializers.Serializer):
         user: User = self.context["request"].user
         user.set_password(self.validated_data["new_password"])
         user.save(update_fields=["password"])
+
+
+class VerifyOTPSerializer(serializers.Serializer):
+    """Verify the OTP code submitted during signup."""
+
+    email = serializers.EmailField()
+    code = serializers.CharField(max_length=6, min_length=6)
+
+    def validate(self, attrs: dict) -> dict:
+        email = attrs["email"]
+        code = attrs["code"]
+
+        try:
+            user = User.objects.get(email=email, is_active=False)
+        except User.DoesNotExist:
+            raise serializers.ValidationError(
+                {"email": "No pending verification account found for this email."}
+            )
+
+        try:
+            otp = user.otp_verification
+        except OTPVerification.DoesNotExist:
+            raise serializers.ValidationError({"code": "No OTP found. Please request a new one."})
+
+        if not otp.is_valid():
+            raise serializers.ValidationError({"code": "OTP has expired. Please request a new one."})
+
+        if otp.code != code:
+            raise serializers.ValidationError({"code": "Invalid OTP code."})
+
+        attrs["user"] = user
+        return attrs
+
+    def save(self, **kwargs) -> User:
+        user: User = self.validated_data["user"]
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        user.otp_verification.delete()
+        return user
+
+
+class ResendOTPSerializer(serializers.Serializer):
+    """Resend an OTP to a user whose account is still pending verification."""
+
+    email = serializers.EmailField()
+
+    def validate_email(self, value: str) -> str:
+        try:
+            user = User.objects.get(email=value, is_active=False)
+        except User.DoesNotExist:
+            raise serializers.ValidationError(
+                "No pending verification account found for this email."
+            )
+        self.user = user
+        return value
+
+    def save(self, **kwargs) -> User:
+        return self.user

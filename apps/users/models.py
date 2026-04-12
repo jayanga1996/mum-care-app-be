@@ -2,10 +2,13 @@
 Custom User model with role-based access for the Mum Care App.
 OOP: AbstractBaseUser + PermissionsMixin for full customisation.
 """
+import random
 import uuid
+from datetime import timedelta
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.utils import timezone
 
 
 class UserRole(models.TextChoices):
@@ -104,3 +107,49 @@ class User(AbstractBaseUser, PermissionsMixin):
         if self.phm_area:
             return self.phm_area.assigned_midwife
         return None
+
+
+class OTPVerification(models.Model):
+    """
+    Stores a one-time password for email verification during signup.
+    Each user has at most one active OTP record (OneToOne).
+    """
+
+    OTP_EXPIRY_MINUTES = 10
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="otp_verification",
+    )
+    code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "otp_verifications"
+        verbose_name = "OTP Verification"
+        verbose_name_plural = "OTP Verifications"
+
+    def __str__(self) -> str:
+        return f"OTP for {self.user.email}"
+
+    @staticmethod
+    def generate_code() -> str:
+        """Generate a random 6-digit numeric OTP."""
+        return str(random.randint(100000, 999999))
+
+    @classmethod
+    def create_for_user(cls, user: User) -> "OTPVerification":
+        """Create or replace the OTP for a user."""
+        expires_at = timezone.now() + timedelta(minutes=cls.OTP_EXPIRY_MINUTES)
+        code = cls.generate_code()
+        obj, _ = cls.objects.update_or_create(
+            user=user,
+            defaults={"code": code, "expires_at": expires_at},
+        )
+        return obj
+
+    def is_valid(self) -> bool:
+        """Return True if the OTP has not expired."""
+        return timezone.now() <= self.expires_at
