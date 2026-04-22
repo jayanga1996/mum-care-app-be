@@ -59,7 +59,7 @@ class PHMArea(models.Model):
 # --- Midwife Schedule Model ---
 class MidwifeSchedule(models.Model):
     SCHEDULE_TYPE_CHOICES = [
-        ("Home Visit", "Home Visit"),
+        ("Clinic", "Home Visit"),
         # Add more types as needed
     ]
     midwife = models.ForeignKey(
