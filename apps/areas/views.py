@@ -18,6 +18,8 @@ class MOHAreaListView(generics.ListCreateAPIView):
 
 from rest_framework.response import Response
 
+from rest_framework import status
+
 class PHMAreaListView(generics.ListCreateAPIView):
     """
     GET  /api/areas/phm/         – list all PHM areas
@@ -75,3 +77,15 @@ class MidwifeScheduleViewSet(viewsets.ModelViewSet):
         if midwife_id:
             queryset = queryset.filter(midwife_id=midwife_id)
         return queryset
+
+
+
+# --- List all schedules for a midwife by midwife_id ---
+class MidwifeScheduleByMidwifeListView(generics.ListAPIView):
+    serializer_class = MidwifeScheduleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, midwife, *args, **kwargs):
+        schedules = MidwifeSchedule.objects.filter(midwife=midwife)
+        serializer = self.get_serializer(schedules, many=True)
+        return Response({"count": schedules.count(), "results": serializer.data})
