@@ -54,3 +54,29 @@ class PHMArea(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.moh_area.name})"
+
+
+# --- Midwife Schedule Model ---
+class MidwifeSchedule(models.Model):
+    SCHEDULE_TYPE_CHOICES = [
+        ("Home Visit", "Home Visit"),
+        # Add more types as needed
+    ]
+    midwife = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="midwife_schedules",
+        limit_choices_to={"role": "midwife"},
+    )
+    type = models.CharField(max_length=50, choices=SCHEDULE_TYPE_CHOICES)
+    date = models.DateField()
+    time = models.TimeField()
+    location = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "midwife_schedules"
+        ordering = ["-date", "-time"]
+
+    def __str__(self):
+        return f"{self.midwife} - {self.type} on {self.date} at {self.time} in {self.location}"

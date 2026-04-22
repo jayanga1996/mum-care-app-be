@@ -2,6 +2,8 @@
 from rest_framework import serializers
 from .models import MOHArea, PHMArea
 
+from .models import MidwifeSchedule
+
 
 class MOHAreaSerializer(serializers.ModelSerializer):
     phm_area_count = serializers.SerializerMethodField()
@@ -37,3 +39,13 @@ class PHMAreaCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PHMArea
         fields = ["name", "moh_area", "assigned_midwife"]
+
+
+# --- Midwife Schedule Serializer ---
+class MidwifeScheduleSerializer(serializers.ModelSerializer):
+    midwife_name = serializers.CharField(source="midwife.full_name", read_only=True)
+
+    class Meta:
+        model = MidwifeSchedule
+        fields = ["id", "midwife", "midwife_name", "type", "date", "time", "location", "created_at"]
+        read_only_fields = ["id", "created_at", "midwife_name"]

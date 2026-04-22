@@ -1,7 +1,7 @@
 """Areas views."""
 from rest_framework import generics, permissions
 from .models import MOHArea, PHMArea
-from .serializers import MOHAreaSerializer, PHMAreaCreateSerializer, PHMAreaSerializer
+from .serializers import MOHAreaSerializer, PHMAreaCreateSerializer, PHMAreaSerializer, MidwifeScheduleSerializer
 
 
 class MOHAreaListView(generics.ListCreateAPIView):
@@ -47,3 +47,19 @@ class PHMAreaDetailView(generics.RetrieveUpdateAPIView):
     queryset = PHMArea.objects.select_related("moh_area", "assigned_midwife").all()
     serializer_class = PHMAreaSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+
+# --- Midwife Schedule ViewSet ---
+from rest_framework import viewsets, permissions as drf_permissions
+from .models import MidwifeSchedule
+
+class MidwifeScheduleViewSet(viewsets.ModelViewSet):
+    serializer_class = MidwifeScheduleSerializer
+    permission_classes = [drf_permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = MidwifeSchedule.objects.select_related("midwife").all()
+        midwife_id = self.request.query_params.get("midwife")
+        if midwife_id:
+            queryset = queryset.filter(midwife_id=midwife_id)
+        return queryset
