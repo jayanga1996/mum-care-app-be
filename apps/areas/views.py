@@ -16,6 +16,8 @@ class MOHAreaListView(generics.ListCreateAPIView):
         return [permissions.IsAdminUser()]
 
 
+from rest_framework.response import Response
+
 class PHMAreaListView(generics.ListCreateAPIView):
     """
     GET  /api/areas/phm/         – list all PHM areas
@@ -27,6 +29,8 @@ class PHMAreaListView(generics.ListCreateAPIView):
     filterset_fields = ["moh_area"]
     search_fields = ["name"]
 
+    pagination_class = None  # Disable pagination to return all PHM areas
+
     def get_permissions(self):
         if self.request.method == "GET":
             return [permissions.AllowAny()]
@@ -34,6 +38,14 @@ class PHMAreaListView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return PHMArea.objects.select_related("moh_area", "assigned_midwife").all()
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "count": queryset.count(),
+            "results": serializer.data
+        })
 
     def get_serializer_class(self):
         if self.request.method == "POST":

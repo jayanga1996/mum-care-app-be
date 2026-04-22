@@ -17,6 +17,7 @@ class MOHAreaSerializer(serializers.ModelSerializer):
         return obj.phm_areas.count()
 
 
+
 class PHMAreaSerializer(serializers.ModelSerializer):
     moh_area_name = serializers.CharField(source="moh_area.name", read_only=True)
     assigned_midwife_name = serializers.SerializerMethodField()
@@ -31,8 +32,8 @@ class PHMAreaSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "moh_area_name", "assigned_midwife_name"]
 
-    def get_assigned_midwife_name(self, obj: PHMArea) -> str | None:
-        return obj.assigned_midwife.full_name if obj.assigned_midwife else None
+    def get_assigned_midwife_name(self, obj):
+        return obj.assigned_midwife.full_name if obj.assigned_midwife and hasattr(obj.assigned_midwife, 'full_name') else None
 
 
 class PHMAreaCreateSerializer(serializers.ModelSerializer):
