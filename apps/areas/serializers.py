@@ -49,4 +49,4 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = MidwifeSchedule
         fields = ["id", "midwife", "midwife_name", "type", "date", "time", "location", "created_at"]
-        read_only_fields = ["id", "created_at", "midwife_name"]
+        read_only_fields = ["id", "created_at", "midwife_name", "midwife"]

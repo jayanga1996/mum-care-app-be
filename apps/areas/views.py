@@ -66,17 +66,56 @@ class PHMAreaDetailView(generics.RetrieveUpdateAPIView):
 # --- Midwife Schedule ViewSet ---
 from rest_framework import viewsets, permissions as drf_permissions
 from .models import MidwifeSchedule
+from apps.users.models import UserRole
 
 class MidwifeScheduleViewSet(viewsets.ModelViewSet):
     serializer_class = MidwifeScheduleSerializer
     permission_classes = [drf_permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = MidwifeSchedule.objects.select_related("midwife").all()
-        midwife_id = self.request.query_params.get("midwife")
-        if midwife_id:
-            queryset = queryset.filter(midwife_id=midwife_id)
-        return queryset
+        """
+        Role rules:
+        - Midwife: can access only own schedules (CRUD via this ViewSet)
+        - Mother: can read only schedules of their assigned midwife
+        - Sister: can read schedules (optionally filter by ?midwife=<uuid>) but cannot create/update/delete
+        """
+        user = self.request.user
+        base = MidwifeSchedule.objects.select_related("midwife")
+
+        if user.role == UserRole.MIDWIFE:
+            return base.filter(midwife=user)
+
+        if user.role == UserRole.MOTHER:
+            midwife = getattr(user, "assigned_midwife", None)
+            if not midwife:
+                return base.none()
+            return base.filter(midwife=midwife)
+
+        if user.role == UserRole.SISTER:
+            midwife_id = self.request.query_params.get("midwife")
+            if midwife_id:
+                return base.filter(midwife_id=midwife_id)
+            return base.all()
+
+        return base.none()
+
+    def get_permissions(self):
+        user = self.request.user
+        # Read endpoints
+        if self.action in ["list", "retrieve"]:
+            return [drf_permissions.IsAuthenticated()]
+
+        # Write endpoints (create/update/delete) only for midwives
+        if user.role == UserRole.MIDWIFE:
+            return [drf_permissions.IsAuthenticated()]
+
+        return [drf_permissions.IsAdminUser()]
+
+    def perform_create(self, serializer):
+        """
+        Midwife creates schedule for herself only (ignore any midwife id in payload).
+        """
+        serializer.save(midwife=self.request.user)
 
 
 
@@ -86,6 +125,41 @@ class MidwifeScheduleByMidwifeListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, midwife, *args, **kwargs):
-        schedules = MidwifeSchedule.objects.filter(midwife=midwife)
+        user = request.user
+        # Midwife can only see own schedules via this endpoint
+        if user.role == UserRole.MIDWIFE and str(user.id) != str(midwife):
+            return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
+        # Mother can only see schedules of her assigned midwife
+        if user.role == UserRole.MOTHER:
+            assigned = getattr(user, "assigned_midwife", None)
+            if not assigned or str(assigned.id) != str(midwife):
+                return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
+
+        schedules = MidwifeSchedule.objects.filter(midwife_id=midwife)
         serializer = self.get_serializer(schedules, many=True)
         return Response({"count": schedules.count(), "results": serializer.data})
+
+
+class MyScheduleListView(generics.ListAPIView):
+    """
+    GET /api/areas/schedules/me/
+    - Midwife: list own schedules
+    - Mother: list schedules of assigned midwife
+    """
+    serializer_class = MidwifeScheduleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        base = MidwifeSchedule.objects.select_related("midwife")
+
+        if user.role == UserRole.MIDWIFE:
+            return base.filter(midwife=user)
+
+        if user.role == UserRole.MOTHER:
+            midwife = getattr(user, "assigned_midwife", None)
+            if not midwife:
+                return base.none()
+            return base.filter(midwife=midwife)
+
+        return base.none()

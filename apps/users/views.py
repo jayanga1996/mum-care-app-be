@@ -197,3 +197,39 @@ class UserListView(generics.ListAPIView):
         if user.role == UserRole.MIDWIFE:
             return User.objects.filter(phm_area=user.phm_area)
         return User.objects.none()
+
+
+class MidwifeMothersView(generics.ListAPIView):
+    """
+    GET /api/users/mothers/
+
+    - Midwife: returns approved mothers in her PHM area
+    - Sister: returns approved mothers for a given midwife (?midwife_id=<uuid>)
+    """
+
+    serializer_class = UserDetailSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ["phm_area", "is_approved"]
+    search_fields = ["full_name", "email"]
+
+    def get_queryset(self):
+        user: User = self.request.user
+
+        if user.role == UserRole.MIDWIFE:
+            return User.objects.select_related("phm_area").filter(
+                role=UserRole.MOTHER,
+                is_approved=True,
+                phm_area=user.phm_area,
+            )
+
+        if user.role == UserRole.SISTER:
+            midwife_id = self.request.query_params.get("midwife_id")
+            if not midwife_id:
+                return User.objects.none()
+            return User.objects.select_related("phm_area").filter(
+                role=UserRole.MOTHER,
+                is_approved=True,
+                phm_area__assigned_midwife_id=midwife_id,
+            )
+
+        return User.objects.none()

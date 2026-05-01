@@ -3,6 +3,7 @@ from .views import (
     ApproveUserView,
     ChangePasswordView,
     MeView,
+    MidwifeMothersView,
     PendingUsersView,
     RegisterView,
     ResendOTPView,
@@ -20,5 +21,6 @@ urlpatterns = [
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
     path("pending/", PendingUsersView.as_view(), name="pending"),
     path("approve/", ApproveUserView.as_view(), name="approve"),
+    path("mothers/", MidwifeMothersView.as_view(), name="mothers"),
     path("", UserListView.as_view(), name="list"),
 ]
