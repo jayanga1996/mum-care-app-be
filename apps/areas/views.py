@@ -1,6 +1,54 @@
 """Areas views."""
+from django.db.models import Q
 from rest_framework import generics, permissions
+
+from apps.users.models import User, UserRole
+
 from .models import MOHArea, PHMArea
+
+
+def _mother_schedule_queryset(base, mother):
+    """
+    Schedules a mother should see for her PHM area.
+
+    Requires schedule.location to match her PHM name (how midwives publish slots).
+    The creating midwife must be linked to that same PHM via any of:
+    - PHMArea.assigned_midwife (official assignment)
+    - User.phm_area (many deployments only set this)
+    - User.managed_area (reverse link when PHM.assigned_midwife is set on the area row)
+
+    Previously we only matched assigned_midwife on the PHM row; if that FK was NULL,
+    mothers saw no schedules even when the midwife shared the same PHM as User.phm_area.
+    """
+    phm = mother.phm_area
+    if not phm:
+        return base.none()
+
+    loc = Q(location__iexact=phm.name)
+    mw = (
+        Q(midwife__phm_area_id=phm.pk)
+        | Q(midwife__managed_area=phm)
+    )
+    if phm.assigned_midwife_id:
+        mw |= Q(midwife_id=phm.assigned_midwife_id)
+    return base.filter(loc & mw)
+
+
+def _mother_can_view_midwife_schedules(mother, midwife_pk) -> bool:
+    """Whether mother may call /midwife/<id>/schedules/ for this midwife."""
+    phm = mother.phm_area
+    if not phm:
+        return False
+    try:
+        mw = User.objects.get(pk=midwife_pk, role=UserRole.MIDWIFE)
+    except User.DoesNotExist:
+        return False
+    if phm.assigned_midwife_id and phm.assigned_midwife_id == mw.pk:
+        return True
+    if mw.phm_area_id == phm.pk:
+        return True
+    managed = getattr(mw, "managed_area", None)
+    return managed is not None and managed.pk == phm.pk
 from .serializers import MOHAreaSerializer, PHMAreaCreateSerializer, PHMAreaSerializer, MidwifeScheduleSerializer
 
 
@@ -66,7 +114,6 @@ class PHMAreaDetailView(generics.RetrieveUpdateAPIView):
 # --- Midwife Schedule ViewSet ---
 from rest_framework import viewsets, permissions as drf_permissions
 from .models import MidwifeSchedule
-from apps.users.models import UserRole
 
 class MidwifeScheduleViewSet(viewsets.ModelViewSet):
     serializer_class = MidwifeScheduleSerializer
@@ -86,11 +133,7 @@ class MidwifeScheduleViewSet(viewsets.ModelViewSet):
             return base.filter(midwife=user)
 
         if user.role == UserRole.MOTHER:
-            midwife = getattr(user, "assigned_midwife", None)
-            phm = user.phm_area
-            if not midwife or not phm:
-                return base.none()
-            return base.filter(midwife=midwife).filter(location__iexact=phm.name)
+            return _mother_schedule_queryset(base, user)
 
         if user.role == UserRole.SISTER:
             midwife_id = self.request.query_params.get("midwife")
@@ -132,8 +175,7 @@ class MidwifeScheduleByMidwifeListView(generics.ListAPIView):
             return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
         # Mother can only see schedules of her assigned midwife
         if user.role == UserRole.MOTHER:
-            assigned = getattr(user, "assigned_midwife", None)
-            if not assigned or str(assigned.id) != str(midwife):
+            if not _mother_can_view_midwife_schedules(user, midwife):
                 return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
 
         schedules = MidwifeSchedule.objects.filter(midwife_id=midwife).select_related("midwife")
@@ -165,10 +207,6 @@ class MyScheduleListView(generics.ListAPIView):
             return base.filter(midwife=user)
 
         if user.role == UserRole.MOTHER:
-            midwife = getattr(user, "assigned_midwife", None)
-            phm = user.phm_area
-            if not midwife or not phm:
-                return base.none()
-            return base.filter(midwife=midwife).filter(location__iexact=phm.name)
+            return _mother_schedule_queryset(base, user)
 
         return base.none()

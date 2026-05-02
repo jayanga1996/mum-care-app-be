@@ -93,3 +93,26 @@ class ApiSmokeTests(TestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
         r = self.client.get("/api/areas/schedules/me/")
         self.assertEqual(r.status_code, 200, r.content)
+
+    def test_mother_sees_schedules_when_phm_row_has_no_assigned_midwife(self):
+        """
+        Production often sets User.phm_area but never PHMArea.assigned_midwife.
+        Mothers must still see schedules from midwives linked via User.phm_area.
+        """
+        self.phm.assigned_midwife = None
+        self.phm.save(update_fields=["assigned_midwife"])
+
+        MidwifeSchedule.objects.create(
+            midwife=self.midwife,
+            type="Clinic",
+            date=date.today(),
+            time=dtime(11, 0, 0),
+            location=self.phm.name,
+        )
+        token = self._token(self.mother.email, "pass12345!")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        r = self.client.get("/api/areas/schedules/me/")
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.data
+        results = body if isinstance(body, list) else body.get("results", body)
+        self.assertEqual(len(results), 1)
