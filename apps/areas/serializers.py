@@ -62,6 +62,10 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "created_at", "midwife_name", "midwife", "phm_area_name"]
+        extra_kwargs = {
+            # Set from phm_area in validate() / create(); clients send phm_area id only
+            "location": {"required": False, "allow_blank": True},
+        }
 
     def validate(self, attrs):
         request = self.context.get("request")
