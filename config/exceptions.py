@@ -64,7 +64,7 @@ def _fix_hint_for_unknown_column(column: str) -> Optional[str]:
     if column == "phm_area_id":
         return (
             "Pull latest backend, then run: python manage.py migrate "
-            "(areas/0007 adds phm_area_id if it is missing). "
+            "(areas/0007 + 0008 add phm_area_id if it is missing). "
             "Alternative: python manage.py repair_midwife_phm_column"
         )
     return None
