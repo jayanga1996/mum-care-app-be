@@ -67,6 +67,17 @@ def _fix_hint_for_unknown_column(column: str) -> Optional[str]:
             "(areas/0007 + 0008 add phm_area_id if it is missing). "
             "Alternative: python manage.py repair_midwife_phm_column"
         )
+    if column in (
+        "response_status",
+        "confirmed_at",
+        "cancelled_at",
+        "cancelled_by_id",
+        "cancellation_reason",
+    ):
+        return (
+            "Pull latest backend, then run: python manage.py migrate "
+            "(areas/0010 adds schedule status columns; areas/0011 repairs MySQL if they are missing)."
+        )
     return None
 
 
