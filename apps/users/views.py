@@ -118,7 +118,12 @@ class MeView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self) -> User:
-        return self.request.user
+        return User.objects.select_related(
+            "phm_area",
+            "phm_area__moh_area",
+            "managed_area",
+            "managed_area__moh_area",
+        ).get(pk=self.request.user.pk)
 
     def update(self, request, *args, **kwargs):
         kwargs["partial"] = True
@@ -151,10 +156,13 @@ class PendingUsersView(generics.ListAPIView):
     def get_queryset(self):
         user: User = self.request.user
         if user.role == UserRole.MIDWIFE:
+            area = getattr(user, "managed_area", None) or user.phm_area
+            if not area:
+                return User.objects.none()
             return User.objects.filter(
                 role=UserRole.MOTHER,
                 is_approved=False,
-                phm_area=user.phm_area,
+                phm_area=area,
             )
         if user.role == UserRole.SISTER:
             return User.objects.filter(role=UserRole.MIDWIFE, is_approved=False)

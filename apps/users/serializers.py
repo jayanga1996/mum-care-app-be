@@ -23,6 +23,8 @@ class UserDetailSerializer(serializers.ModelSerializer):
     """Full user detail including area info."""
 
     phm_area = PHMAreaSerializer(read_only=True)
+    """PHM area the midwife manages (OneToOne from PHM.assigned_midwife)."""
+    managed_phm_area = serializers.SerializerMethodField()
     assigned_midwife_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -30,10 +32,16 @@ class UserDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id", "email", "full_name", "role",
             "is_approved", "approved_at",
-            "phm_area", "assigned_midwife_name",
+            "phm_area", "managed_phm_area", "assigned_midwife_name",
             "created_at", "updated_at",
         ]
         read_only_fields = fields
+
+    def get_managed_phm_area(self, obj: User) -> dict | None:
+        ma = getattr(obj, "managed_area", None)
+        if ma is None:
+            return None
+        return PHMAreaSerializer(ma).data
 
     def get_assigned_midwife_name(self, obj: User) -> str | None:
         midwife = obj.assigned_midwife

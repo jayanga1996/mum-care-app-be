@@ -1,4 +1,6 @@
 """Areas serializers."""
+from typing import Optional
+
 from rest_framework import serializers
 from apps.users.models import UserRole
 
@@ -63,9 +65,18 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "midwife_name", "midwife", "phm_area_name"]
         extra_kwargs = {
-            # Set from phm_area in validate() / create(); clients send phm_area id only
+            # Set from phm_area in validate() / create(); midwife may omit phm_area (uses assigned PHM)
             "location": {"required": False, "allow_blank": True},
+            "phm_area": {"required": False},
         }
+
+    @staticmethod
+    def _default_phm_for_midwife(user) -> Optional[PHMArea]:
+        """Single PHM for this midwife: reverse OneToOne managed_area, else FK on PHMArea."""
+        managed = getattr(user, "managed_area", None)
+        if managed is not None:
+            return managed
+        return PHMArea.objects.filter(assigned_midwife_id=user.id).first()
 
     @staticmethod
     def _midwife_can_use_phm(user, phm: PHMArea) -> bool:
@@ -91,8 +102,15 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
                 if phm:
                     attrs["phm_area"] = phm
             if attrs.get("phm_area") is None:
+                auto = self._default_phm_for_midwife(user)
+                if auto:
+                    attrs["phm_area"] = auto
+            if attrs.get("phm_area") is None:
                 raise serializers.ValidationError(
-                    {"phm_area": "PHM area is required (send phm_area id or a matching location name)."}
+                    {
+                        "phm_area": "No PHM area is linked to your midwife account. "
+                        "Ask an admin to assign you to a PHM area."
+                    }
                 )
             phm = attrs["phm_area"]
             if not self._midwife_can_use_phm(user, phm):
