@@ -162,6 +162,7 @@ class MyScheduleListView(generics.ListAPIView):
     """
     serializer_class = MidwifeScheduleSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None  # Return {count, results} from list() override; avoid page wrapper issues
 
     def get_queryset(self):
         user = self.request.user

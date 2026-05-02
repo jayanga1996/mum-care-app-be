@@ -34,6 +34,8 @@ MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/{MEDIA_LOCATION}/"  # noqa: F405
 STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/{STATIC_LOCATION}/"  # noqa: F405
 
 # ── Logging ────────────────────────────────────────────────────────────────
+# Console only: a missing /var/log/mum_care/ directory breaks FileHandler and can take workers down.
+# Use journalctl / Docker logs, or add a file handler after mkdir + chmod on the server.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -44,19 +46,13 @@ LOGGING = {
         },
     },
     "handlers": {
-        "file": {
-            "level": "ERROR",
-            "class": "logging.FileHandler",
-            "filename": "/var/log/mum_care/django_errors.log",
-            "formatter": "verbose",
-        },
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
         },
     },
     "root": {
-        "handlers": ["console", "file"],
+        "handlers": ["console"],
         "level": "WARNING",
     },
 }

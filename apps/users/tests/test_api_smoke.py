@@ -74,7 +74,7 @@ class ApiSmokeTests(TestCase):
         r = self.client.get(list_url)
         self.assertEqual(r.status_code, 200, r.content)
         body = r.data
-        results = body.get("results", body)
+        results = body if isinstance(body, list) else body.get("results", body)
         self.assertTrue(len(results) >= 1)
 
         # SerializerMethodField phm_area_name must not crash when serializing
