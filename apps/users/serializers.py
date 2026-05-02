@@ -2,6 +2,8 @@
 User serializers.
 OOP: Composed of nested serializers & custom validation methods.
 """
+from typing import Optional
+
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
@@ -23,7 +25,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
     """Full user detail including area info."""
 
     phm_area = PHMAreaSerializer(read_only=True)
-    """PHM area the midwife manages (OneToOne from PHM.assigned_midwife)."""
+    # PHM area this midwife manages (reverse of PHMArea.assigned_midwife), when set.
     managed_phm_area = serializers.SerializerMethodField()
     assigned_midwife_name = serializers.SerializerMethodField()
 
@@ -37,13 +39,16 @@ class UserDetailSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_managed_phm_area(self, obj: User) -> dict | None:
+    def get_managed_phm_area(self, obj: User) -> Optional[dict]:
         ma = getattr(obj, "managed_area", None)
         if ma is None:
             return None
-        return PHMAreaSerializer(ma).data
+        try:
+            return PHMAreaSerializer(ma).data
+        except Exception:
+            return None
 
-    def get_assigned_midwife_name(self, obj: User) -> str | None:
+    def get_assigned_midwife_name(self, obj: User) -> Optional[str]:
         midwife = obj.assigned_midwife
         return midwife.full_name if midwife else None
 

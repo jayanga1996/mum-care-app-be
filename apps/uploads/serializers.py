@@ -1,4 +1,6 @@
 """Uploads serializers."""
+from typing import Optional
+
 from rest_framework import serializers
 from .models import FileUpload
 
@@ -19,7 +21,7 @@ class FileUploadSerializer(serializers.ModelSerializer):
             "file_size_bytes", "uploaded_at",
         ]
 
-    def get_file_url(self, obj: FileUpload) -> str | None:
+    def get_file_url(self, obj: FileUpload) -> Optional[str]:
         request = self.context.get("request")
         if obj.file and request:
             return request.build_absolute_uri(obj.file.url)
