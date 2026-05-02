@@ -72,19 +72,34 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def _default_phm_for_midwife(user) -> Optional[PHMArea]:
-        """Single PHM for this midwife: reverse OneToOne managed_area, else FK on PHMArea."""
+        """
+        Resolve PHM for schedule creation (midwife has exactly one area):
+        1) Reverse OneToOne managed_area from PHM.assigned_midwife
+        2) PHMArea where assigned_midwife_id == user.id
+        3) User.phm_area (often set in admin even when PHM.assigned_midwife was never synced)
+        """
         managed = getattr(user, "managed_area", None)
         if managed is not None:
             return managed
-        return PHMArea.objects.filter(assigned_midwife_id=user.id).first()
+        by_role = PHMArea.objects.filter(assigned_midwife_id=user.id).first()
+        if by_role is not None:
+            return by_role
+        pa_id = getattr(user, "phm_area_id", None)
+        if pa_id:
+            return PHMArea.objects.filter(pk=pa_id).first()
+        return None
 
     @staticmethod
     def _midwife_can_use_phm(user, phm: PHMArea) -> bool:
-        """True if this midwife is linked to the PHM (FK on area or managed_area on user)."""
+        """Midwife may schedule only for PHMs linked to them."""
         if phm.assigned_midwife_id is not None and phm.assigned_midwife_id == user.id:
             return True
         managed = getattr(user, "managed_area", None)
-        return bool(managed is not None and managed.pk == phm.pk)
+        if managed is not None and managed.pk == phm.pk:
+            return True
+        if getattr(user, "phm_area_id", None) == phm.pk:
+            return True
+        return False
 
     def validate(self, attrs):
         request = self.context.get("request")
