@@ -63,9 +63,9 @@ def _parse_mysql_unknown_column(exc: BaseException) -> Optional[str]:
 def _fix_hint_for_unknown_column(column: str) -> Optional[str]:
     if column == "phm_area_id":
         return (
-            "Column belongs to migration areas/0005. If `migrate` says nothing to apply but "
-            "the column is missing, run on the server: python manage.py repair_midwife_phm_column "
-            "(see backend repo apps/areas/management/commands/)."
+            "Pull latest backend, then run: python manage.py migrate "
+            "(areas/0007 adds phm_area_id if it is missing). "
+            "Alternative: python manage.py repair_midwife_phm_column"
         )
     return None
 
