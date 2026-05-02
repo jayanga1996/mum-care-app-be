@@ -25,6 +25,16 @@ class Command(BaseCommand):
         self.stdout.write(f"Database vendor: {connection.vendor}")
         self.stdout.write(f"Looking for tables: {need}")
 
+        if connection.vendor == "sqlite":
+            self.stdout.write(
+                self.style.WARNING(
+                    "Using SQLite (development settings). Gunicorn uses production/MySQL — "
+                    "migrate with the same DB as the app: "
+                    "DJANGO_SETTINGS_MODULE=config.settings.production python manage.py migrate areas "
+                    "or export DJANGO_USE_PRODUCTION_SETTINGS=1."
+                )
+            )
+
         if missing:
             self.stdout.write(self.style.ERROR(f"MISSING: {missing}"))
             self.stdout.write(
