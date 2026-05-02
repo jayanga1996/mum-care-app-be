@@ -116,3 +116,26 @@ class ApiSmokeTests(TestCase):
         body = r.data
         results = body if isinstance(body, list) else body.get("results", body)
         self.assertEqual(len(results), 1)
+
+    def test_mother_can_confirm_schedule_via_patch(self):
+        sched = MidwifeSchedule.objects.create(
+            midwife=self.midwife,
+            type="Clinic",
+            date=date.today(),
+            time=dtime(14, 30, 0),
+            location=self.phm.name,
+        )
+        token = self._token(self.mother.email, "pass12345!")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        url = f"/api/areas/midwife-schedules/{sched.pk}/"
+        r = self.client.patch(url, {"response_status": "confirmed"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data.get("response_status"), "confirmed")
+
+        r = self.client.patch(
+            url,
+            {"response_status": "cancelled", "cancellation_reason": "Cannot attend"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data.get("response_status"), "cancelled")

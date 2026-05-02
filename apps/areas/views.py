@@ -127,7 +127,7 @@ class MidwifeScheduleViewSet(viewsets.ModelViewSet):
         - Sister: can read schedules (optionally filter by ?midwife=<uuid>) but cannot create/update/delete
         """
         user = self.request.user
-        base = MidwifeSchedule.objects.select_related("midwife")
+        base = MidwifeSchedule.objects.select_related("midwife", "cancelled_by")
 
         if user.role == UserRole.MIDWIFE:
             return base.filter(midwife=user)
@@ -149,9 +149,20 @@ class MidwifeScheduleViewSet(viewsets.ModelViewSet):
         if self.action in ["list", "retrieve"]:
             return [drf_permissions.IsAuthenticated()]
 
-        # Write endpoints (create/update/delete) only for midwives
-        if user.role == UserRole.MIDWIFE:
-            return [drf_permissions.IsAuthenticated()]
+        if self.action == "create":
+            if user.role == UserRole.MIDWIFE:
+                return [drf_permissions.IsAuthenticated()]
+            return [drf_permissions.IsAdminUser()]
+
+        if self.action in ["update", "partial_update"]:
+            if user.role in (UserRole.MIDWIFE, UserRole.MOTHER):
+                return [drf_permissions.IsAuthenticated()]
+            return [drf_permissions.IsAdminUser()]
+
+        if self.action == "destroy":
+            if user.role == UserRole.MIDWIFE:
+                return [drf_permissions.IsAuthenticated()]
+            return [drf_permissions.IsAdminUser()]
 
         return [drf_permissions.IsAdminUser()]
 
@@ -178,7 +189,9 @@ class MidwifeScheduleByMidwifeListView(generics.ListAPIView):
             if not _mother_can_view_midwife_schedules(user, midwife):
                 return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
 
-        schedules = MidwifeSchedule.objects.filter(midwife_id=midwife).select_related("midwife")
+        schedules = MidwifeSchedule.objects.filter(midwife_id=midwife).select_related(
+            "midwife", "cancelled_by"
+        )
         if user.role == UserRole.MOTHER:
             phm = user.phm_area
             if not phm:
@@ -201,7 +214,7 @@ class MyScheduleListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        base = MidwifeSchedule.objects.select_related("midwife")
+        base = MidwifeSchedule.objects.select_related("midwife", "cancelled_by")
 
         if user.role == UserRole.MIDWIFE:
             return base.filter(midwife=user)

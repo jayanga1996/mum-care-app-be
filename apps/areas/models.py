@@ -58,6 +58,13 @@ class PHMArea(models.Model):
 
 # --- Midwife Schedule Model ---
 class MidwifeSchedule(models.Model):
+    class ResponseStatus(models.TextChoices):
+        """Mother or midwife can confirm or cancel an entry."""
+
+        SCHEDULED = "scheduled", "Scheduled"
+        CONFIRMED = "confirmed", "Confirmed"
+        CANCELLED = "cancelled", "Cancelled"
+
     SCHEDULE_TYPE_CHOICES = [
         ("Clinic", "Clinic"),
         ("Home Visit", "Home Visit"),
@@ -74,6 +81,21 @@ class MidwifeSchedule(models.Model):
     date = models.DateField()
     time = models.TimeField()
     location = models.CharField(max_length=255)
+    response_status = models.CharField(
+        max_length=20,
+        choices=ResponseStatus.choices,
+        default=ResponseStatus.SCHEDULED,
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        "users.User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="schedules_cancelled",
+    )
+    cancellation_reason = models.CharField(max_length=500, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
