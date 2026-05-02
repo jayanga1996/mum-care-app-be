@@ -9,6 +9,7 @@ import traceback
 from typing import Optional
 
 from django.conf import settings
+from django.db import ProgrammingError as DjangoProgrammingError
 from django.db.utils import OperationalError as DjangoOperationalError
 from rest_framework import status
 from rest_framework.response import Response
@@ -45,6 +46,47 @@ def _database_error_hint(exc: BaseException) -> Optional[str]:
     if "can't connect" in msg or "could not connect" in msg:
         return "Cannot reach MySQL — check DB_HOST, DB_PORT, and that mysqld is listening."
     return "Database error — verify MySQL is up and .env DB_* values match this environment."
+
+
+def _programming_error_hint(exc: BaseException) -> Optional[str]:
+    """Hints for django.db.ProgrammingError (missing relation, bad SQL, etc.)."""
+    if not isinstance(exc, DjangoProgrammingError):
+        return None
+    msg = str(exc).lower()
+    if "doesn't exist" in msg or "does not exist" in msg or "undefinedtable" in msg:
+        return (
+            "A table or other database object is missing. Run: python manage.py migrate "
+            "(ensure `areas` migrations through 0014 are applied on this database)."
+        )
+    if "syntax" in msg and "error" in msg:
+        return "The database reported a SQL syntax error — check MySQL/MariaDB version and migration state."
+    return "Database programming error — see server logs; often `migrate` fixes this after a deploy."
+
+
+def _parse_missing_table_name(exc: BaseException) -> Optional[str]:
+    text = str(exc)
+    m = re.search(r'relation\s+"([^"]+)"\s+does not exist', text, re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r"Table\s+['`]([^'`]+)['`]\s+doesn't exist", text, re.I)
+    if m:
+        t = m.group(1)
+        return t.split(".")[-1] if "." in t else t
+    m = re.search(r"Table\s+['`]([^'`]+)['`]\s+does not exist", text, re.I)
+    if m:
+        t = m.group(1)
+        return t.split(".")[-1] if "." in t else t
+    return None
+
+
+def _fix_for_programming_error(exc: BaseException) -> Optional[str]:
+    t = (str(exc) or "").lower()
+    if "midwife_schedule_responses" in t or "midwife_schedules" in t:
+        return (
+            "Run on the server: python manage.py migrate areas && restart the app. "
+            "Use the same DATABASE_NAME as gunicorn (check systemd EnvironmentFile / .env)."
+        )
+    return None
 
 
 def _parse_mysql_unknown_column(exc: BaseException) -> Optional[str]:
@@ -107,9 +149,20 @@ def api_exception_handler(exc, context):
     if expose:
         body["exc_message"] = str(exc)
 
-    hint = _database_error_hint(exc)
-    if hint:
-        body["hint"] = hint
+    if isinstance(exc, DjangoProgrammingError):
+        ph = _programming_error_hint(exc)
+        if ph:
+            body["hint"] = ph
+        mt = _parse_missing_table_name(exc)
+        if mt:
+            body["missing_object"] = mt
+        pfix = _fix_for_programming_error(exc)
+        if pfix:
+            body["fix"] = pfix
+    else:
+        hint = _database_error_hint(exc)
+        if hint:
+            body["hint"] = hint
 
     if isinstance(exc, DjangoOperationalError):
         uk = _parse_mysql_unknown_column(exc)
