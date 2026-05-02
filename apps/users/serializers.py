@@ -28,13 +28,15 @@ class UserDetailSerializer(serializers.ModelSerializer):
     # PHM area this midwife manages (reverse of PHMArea.assigned_midwife), when set.
     managed_phm_area = serializers.SerializerMethodField()
     assigned_midwife_name = serializers.SerializerMethodField()
+    # Plain string for clients that do not rely on nested phm_area (more resilient).
+    phm_area_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             "id", "email", "full_name", "role",
             "is_approved", "approved_at",
-            "phm_area", "managed_phm_area", "assigned_midwife_name",
+            "phm_area", "phm_area_name", "managed_phm_area", "assigned_midwife_name",
             "created_at", "updated_at",
         ]
         read_only_fields = fields
@@ -51,6 +53,15 @@ class UserDetailSerializer(serializers.ModelSerializer):
     def get_assigned_midwife_name(self, obj: User) -> Optional[str]:
         midwife = obj.assigned_midwife
         return midwife.full_name if midwife else None
+
+    def get_phm_area_name(self, obj: User) -> Optional[str]:
+        pa = getattr(obj, "phm_area", None)
+        if pa is None:
+            return None
+        try:
+            return pa.name
+        except Exception:
+            return None
 
 
 class RegisterSerializer(serializers.ModelSerializer):

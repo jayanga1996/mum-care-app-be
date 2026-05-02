@@ -128,8 +128,10 @@ class MeView(generics.RetrieveUpdateAPIView):
         qs = User.objects.select_related(
             "phm_area",
             "phm_area__moh_area",
+            "phm_area__assigned_midwife",
             "managed_area",
             "managed_area__moh_area",
+            "managed_area__assigned_midwife",
         )
         try:
             return qs.get(pk=pk)
