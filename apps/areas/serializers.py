@@ -67,6 +67,14 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
             "location": {"required": False, "allow_blank": True},
         }
 
+    @staticmethod
+    def _midwife_can_use_phm(user, phm: PHMArea) -> bool:
+        """True if this midwife is linked to the PHM (FK on area or managed_area on user)."""
+        if phm.assigned_midwife_id is not None and phm.assigned_midwife_id == user.id:
+            return True
+        managed = getattr(user, "managed_area", None)
+        return bool(managed is not None and managed.pk == phm.pk)
+
     def validate(self, attrs):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
@@ -87,7 +95,7 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
                     {"phm_area": "PHM area is required (send phm_area id or a matching location name)."}
                 )
             phm = attrs["phm_area"]
-            if phm.assigned_midwife_id != user.id:
+            if not self._midwife_can_use_phm(user, phm):
                 raise serializers.ValidationError(
                     {"phm_area": "You may only create schedules for PHM areas assigned to you."}
                 )
@@ -96,7 +104,7 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
 
         if attrs.get("phm_area") is not None:
             phm = attrs["phm_area"]
-            if phm.assigned_midwife_id != user.id:
+            if not self._midwife_can_use_phm(user, phm):
                 raise serializers.ValidationError({"phm_area": "Invalid PHM area."})
             attrs["location"] = phm.name
         return attrs
