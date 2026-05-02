@@ -68,13 +68,8 @@ class MidwifeSchedule(models.Model):
         related_name="midwife_schedules",
         limit_choices_to={"role": "midwife"},
     )
-    phm_area = models.ForeignKey(
-        PHMArea,
-        on_delete=models.PROTECT,
-        related_name="schedules",
-        null=True,
-        blank=True,
-    )
+    # PHM scope is represented by `location` (set to the PHM area name on create). This avoids
+    # depending on a DB column that has been missing on some MySQL deployments (phm_area_id).
     type = models.CharField(max_length=50, choices=SCHEDULE_TYPE_CHOICES)
     date = models.DateField()
     time = models.TimeField()

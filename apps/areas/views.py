@@ -1,5 +1,4 @@
 """Areas views."""
-from django.db.models import Q
 from rest_framework import generics, permissions
 from .models import MOHArea, PHMArea
 from .serializers import MOHAreaSerializer, PHMAreaCreateSerializer, PHMAreaSerializer, MidwifeScheduleSerializer
@@ -81,7 +80,7 @@ class MidwifeScheduleViewSet(viewsets.ModelViewSet):
         - Sister: can read schedules (optionally filter by ?midwife=<uuid>) but cannot create/update/delete
         """
         user = self.request.user
-        base = MidwifeSchedule.objects.select_related("midwife", "phm_area")
+        base = MidwifeSchedule.objects.select_related("midwife")
 
         if user.role == UserRole.MIDWIFE:
             return base.filter(midwife=user)
@@ -91,9 +90,7 @@ class MidwifeScheduleViewSet(viewsets.ModelViewSet):
             phm = user.phm_area
             if not midwife or not phm:
                 return base.none()
-            return base.filter(midwife=midwife).filter(
-                Q(phm_area=phm) | Q(phm_area__isnull=True, location__iexact=phm.name)
-            )
+            return base.filter(midwife=midwife).filter(location__iexact=phm.name)
 
         if user.role == UserRole.SISTER:
             midwife_id = self.request.query_params.get("midwife")
@@ -139,17 +136,13 @@ class MidwifeScheduleByMidwifeListView(generics.ListAPIView):
             if not assigned or str(assigned.id) != str(midwife):
                 return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
 
-        schedules = MidwifeSchedule.objects.filter(midwife_id=midwife).select_related(
-            "midwife", "phm_area"
-        )
+        schedules = MidwifeSchedule.objects.filter(midwife_id=midwife).select_related("midwife")
         if user.role == UserRole.MOTHER:
             phm = user.phm_area
             if not phm:
                 schedules = schedules.none()
             else:
-                schedules = schedules.filter(
-                    Q(phm_area=phm) | Q(phm_area__isnull=True, location__iexact=phm.name)
-                )
+                schedules = schedules.filter(location__iexact=phm.name)
         serializer = self.get_serializer(schedules, many=True)
         return Response({"count": schedules.count(), "results": serializer.data})
 
@@ -166,7 +159,7 @@ class MyScheduleListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        base = MidwifeSchedule.objects.select_related("midwife", "phm_area")
+        base = MidwifeSchedule.objects.select_related("midwife")
 
         if user.role == UserRole.MIDWIFE:
             return base.filter(midwife=user)
@@ -176,8 +169,6 @@ class MyScheduleListView(generics.ListAPIView):
             phm = user.phm_area
             if not midwife or not phm:
                 return base.none()
-            return base.filter(midwife=midwife).filter(
-                Q(phm_area=phm) | Q(phm_area__isnull=True, location__iexact=phm.name)
-            )
+            return base.filter(midwife=midwife).filter(location__iexact=phm.name)
 
         return base.none()

@@ -84,7 +84,6 @@ class ApiSmokeTests(TestCase):
     def test_mother_schedules_me_lists_ok(self):
         MidwifeSchedule.objects.create(
             midwife=self.midwife,
-            phm_area=self.phm,
             type="Home Visit",
             date=date.today(),
             time=dtime(9, 0),

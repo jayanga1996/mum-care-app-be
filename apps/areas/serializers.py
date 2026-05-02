@@ -48,6 +48,13 @@ class PHMAreaCreateSerializer(serializers.ModelSerializer):
 class MidwifeScheduleSerializer(serializers.ModelSerializer):
     midwife_name = serializers.CharField(source="midwife.full_name", read_only=True)
     phm_area_name = serializers.SerializerMethodField()
+    # Optional write: resolve PHM for validation when client sends an id (legacy / admin tools).
+    phm_area = serializers.PrimaryKeyRelatedField(
+        queryset=PHMArea.objects.all(),
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
 
     class Meta:
         model = MidwifeSchedule
@@ -63,21 +70,14 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
             "phm_area_name",
             "created_at",
         ]
-        read_only_fields = ["id", "created_at", "midwife_name", "midwife"]
+        read_only_fields = ["id", "created_at", "midwife_name", "midwife", "phm_area_name"]
         extra_kwargs = {
-            # Set from phm_area in validate() / create(); midwife may omit phm_area (uses assigned PHM)
             "location": {"required": False, "allow_blank": True},
-            "phm_area": {"required": False},
         }
 
     def get_phm_area_name(self, obj: MidwifeSchedule) -> Optional[str]:
-        if not getattr(obj, "phm_area_id", None):
-            return None
-        try:
-            pa = obj.phm_area
-            return pa.name if pa else None
-        except Exception:
-            return None
+        loc = (getattr(obj, "location", None) or "").strip()
+        return loc or None
 
     @staticmethod
     def _default_phm_for_midwife(user) -> Optional[PHMArea]:
@@ -119,24 +119,21 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
             return attrs
 
         if self.instance is None:
-            phm = attrs.get("phm_area")
+            phm = attrs.pop("phm_area", None)
             loc = attrs.get("location", "") or ""
             if phm is None and loc:
                 phm = PHMArea.objects.filter(name__iexact=str(loc).strip()).first()
-                if phm:
-                    attrs["phm_area"] = phm
-            if attrs.get("phm_area") is None:
+            if phm is None:
                 auto = self._default_phm_for_midwife(user)
                 if auto:
-                    attrs["phm_area"] = auto
-            if attrs.get("phm_area") is None:
+                    phm = auto
+            if phm is None:
                 raise serializers.ValidationError(
                     {
                         "phm_area": "No PHM area is linked to your midwife account. "
                         "Ask an admin to assign you to a PHM area."
                     }
                 )
-            phm = attrs["phm_area"]
             if not self._midwife_can_use_phm(user, phm):
                 raise serializers.ValidationError(
                     {"phm_area": "You may only create schedules for PHM areas assigned to you."}
@@ -144,21 +141,17 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
             attrs["location"] = phm.name
             return attrs
 
-        if attrs.get("phm_area") is not None:
-            phm = attrs["phm_area"]
+        phm = attrs.pop("phm_area", None)
+        if phm is not None:
             if not self._midwife_can_use_phm(user, phm):
                 raise serializers.ValidationError({"phm_area": "Invalid PHM area."})
             attrs["location"] = phm.name
         return attrs
 
     def create(self, validated_data):
-        phm = validated_data.get("phm_area")
-        if phm:
-            validated_data["location"] = phm.name
+        validated_data.pop("phm_area", None)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        phm = validated_data.get("phm_area")
-        if phm:
-            validated_data["location"] = phm.name
+        validated_data.pop("phm_area", None)
         return super().update(instance, validated_data)
