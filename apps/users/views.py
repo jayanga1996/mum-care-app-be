@@ -2,6 +2,8 @@
 User views.
 OOP: class-based views using DRF GenericAPIView / ViewSet.
 """
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import DatabaseError
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -118,12 +120,21 @@ class MeView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self) -> User:
-        return User.objects.select_related(
+        """
+        Prefer joined loads for serializer; fall back to plain get() if joins fail
+        (orphan FK / DB quirks) to avoid 500 on /api/users/me/.
+        """
+        pk = self.request.user.pk
+        qs = User.objects.select_related(
             "phm_area",
             "phm_area__moh_area",
             "managed_area",
             "managed_area__moh_area",
-        ).get(pk=self.request.user.pk)
+        )
+        try:
+            return qs.get(pk=pk)
+        except (ObjectDoesNotExist, DatabaseError, AttributeError):
+            return User.objects.get(pk=pk)
 
     def update(self, request, *args, **kwargs):
         kwargs["partial"] = True

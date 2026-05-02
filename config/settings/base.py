@@ -140,6 +140,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 # Django REST Framework
 # ─────────────────────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
+    "EXCEPTION_HANDLER": "config.exceptions.api_exception_handler",
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],

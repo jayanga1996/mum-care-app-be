@@ -47,7 +47,7 @@ class PHMAreaCreateSerializer(serializers.ModelSerializer):
 # --- Midwife Schedule Serializer ---
 class MidwifeScheduleSerializer(serializers.ModelSerializer):
     midwife_name = serializers.CharField(source="midwife.full_name", read_only=True)
-    phm_area_name = serializers.CharField(source="phm_area.name", read_only=True)
+    phm_area_name = serializers.SerializerMethodField()
 
     class Meta:
         model = MidwifeSchedule
@@ -63,12 +63,21 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
             "phm_area_name",
             "created_at",
         ]
-        read_only_fields = ["id", "created_at", "midwife_name", "midwife", "phm_area_name"]
+        read_only_fields = ["id", "created_at", "midwife_name", "midwife"]
         extra_kwargs = {
             # Set from phm_area in validate() / create(); midwife may omit phm_area (uses assigned PHM)
             "location": {"required": False, "allow_blank": True},
             "phm_area": {"required": False},
         }
+
+    def get_phm_area_name(self, obj: MidwifeSchedule) -> Optional[str]:
+        if not getattr(obj, "phm_area_id", None):
+            return None
+        try:
+            pa = obj.phm_area
+            return pa.name if pa else None
+        except Exception:
+            return None
 
     @staticmethod
     def _default_phm_for_midwife(user) -> Optional[PHMArea]:
