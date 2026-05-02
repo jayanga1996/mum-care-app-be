@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from apps.users.models import UserRole
 
-from .models import MOHArea, PHMArea, MidwifeSchedule
+from .models import MOHArea, PHMArea, MidwifeSchedule, MidwifeScheduleResponse
 
 
 class MOHAreaSerializer(serializers.ModelSerializer):
@@ -18,7 +18,6 @@ class MOHAreaSerializer(serializers.ModelSerializer):
 
     def get_phm_area_count(self, obj: MOHArea) -> int:
         return obj.phm_areas.count()
-
 
 
 class PHMAreaSerializer(serializers.ModelSerializer):
@@ -49,8 +48,13 @@ class PHMAreaCreateSerializer(serializers.ModelSerializer):
 class MidwifeScheduleSerializer(serializers.ModelSerializer):
     midwife_name = serializers.CharField(source="midwife.full_name", read_only=True)
     phm_area_name = serializers.SerializerMethodField()
+    response_status = serializers.SerializerMethodField()
+    confirmed_at = serializers.SerializerMethodField()
+    cancelled_at = serializers.SerializerMethodField()
+    cancelled_by = serializers.SerializerMethodField()
     cancelled_by_name = serializers.SerializerMethodField()
-    # Optional write: resolve PHM for validation when client sends an id (legacy / admin tools).
+    cancellation_reason = serializers.SerializerMethodField()
+
     phm_area = serializers.PrimaryKeyRelatedField(
         queryset=PHMArea.objects.all(),
         required=False,
@@ -84,36 +88,58 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
             "midwife_name",
             "midwife",
             "phm_area_name",
-            "cancelled_by_name",
+            "response_status",
             "confirmed_at",
             "cancelled_at",
             "cancelled_by",
+            "cancelled_by_name",
+            "cancellation_reason",
         ]
         extra_kwargs = {
             "location": {"required": False, "allow_blank": True},
         }
 
+    def _schedule_response(self, schedule: MidwifeSchedule) -> MidwifeScheduleResponse:
+        meta, _ = MidwifeScheduleResponse.objects.get_or_create(
+            schedule=schedule,
+            defaults={"response_status": MidwifeScheduleResponse.ResponseStatus.SCHEDULED},
+        )
+        return meta
+
+    def get_response_status(self, obj: MidwifeSchedule) -> str:
+        return self._schedule_response(obj).response_status
+
+    def get_confirmed_at(self, obj: MidwifeSchedule):
+        return self._schedule_response(obj).confirmed_at
+
+    def get_cancelled_at(self, obj: MidwifeSchedule):
+        return self._schedule_response(obj).cancelled_at
+
+    def get_cancelled_by(self, obj: MidwifeSchedule) -> Optional[str]:
+        mid = self._schedule_response(obj).cancelled_by_id
+        return str(mid) if mid else None
+
+    def get_cancelled_by_name(self, obj: MidwifeSchedule) -> Optional[str]:
+        meta = getattr(obj, "response_detail", None)
+        if meta is None:
+            meta = MidwifeScheduleResponse.objects.filter(schedule=obj).first()
+        if meta is None or meta.cancelled_by_id is None:
+            return None
+        try:
+            cb = meta.cancelled_by
+            return cb.full_name if cb else None
+        except Exception:
+            return None
+
+    def get_cancellation_reason(self, obj: MidwifeSchedule) -> str:
+        return self._schedule_response(obj).cancellation_reason or ""
+
     def get_phm_area_name(self, obj: MidwifeSchedule) -> Optional[str]:
         loc = (getattr(obj, "location", None) or "").strip()
         return loc or None
 
-    def get_cancelled_by_name(self, obj: MidwifeSchedule) -> Optional[str]:
-        cb = getattr(obj, "cancelled_by", None)
-        if cb is None:
-            return None
-        try:
-            return cb.full_name
-        except Exception:
-            return None
-
     @staticmethod
     def _default_phm_for_midwife(user) -> Optional[PHMArea]:
-        """
-        Resolve PHM for schedule creation (midwife has exactly one area):
-        1) Reverse OneToOne managed_area from PHM.assigned_midwife
-        2) PHMArea where assigned_midwife_id == user.id
-        3) User.phm_area (often set in admin even when PHM.assigned_midwife was never synced)
-        """
         managed = getattr(user, "managed_area", None)
         if managed is not None:
             return managed
@@ -127,7 +153,6 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def _midwife_can_use_phm(user, phm: PHMArea) -> bool:
-        """Midwife may schedule only for PHMs linked to them."""
         if phm.assigned_midwife_id is not None and phm.assigned_midwife_id == user.id:
             return True
         managed = getattr(user, "managed_area", None)
@@ -144,10 +169,21 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
         user = request.user
         inst = self.instance
 
-        if inst is not None and inst.response_status == MidwifeSchedule.ResponseStatus.CANCELLED:
-            raise serializers.ValidationError(
-                {"detail": "This schedule is cancelled and cannot be edited."}
-            )
+        data = getattr(self, "initial_data", {}) or {}
+        if "response_status" in data:
+            attrs["response_status"] = data["response_status"]
+        if "cancellation_reason" in data:
+            attrs["cancellation_reason"] = data["cancellation_reason"]
+
+        meta = None
+        old_rs = MidwifeScheduleResponse.ResponseStatus.SCHEDULED
+        if inst is not None:
+            meta = self._schedule_response(inst)
+            old_rs = meta.response_status
+            if meta.response_status == MidwifeScheduleResponse.ResponseStatus.CANCELLED:
+                raise serializers.ValidationError(
+                    {"detail": "This schedule is cancelled and cannot be edited."}
+                )
 
         if getattr(user, "role", None) == UserRole.MOTHER and inst is not None:
             bad = set(attrs.keys()) - {"response_status", "cancellation_reason"}
@@ -156,9 +192,9 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
                     {k: "Mothers can only confirm or cancel (response_status / cancellation_reason)." for k in bad}
                 )
 
-        new_status = attrs.get("response_status", getattr(inst, "response_status", None))
+        new_status = attrs.get("response_status", old_rs)
         if inst is not None and new_status is not None:
-            self._validate_response_transition(inst.response_status, new_status)
+            self._validate_response_transition(old_rs, new_status)
 
         if getattr(user, "role", None) != UserRole.MIDWIFE:
             return attrs
@@ -196,14 +232,14 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
     @staticmethod
     def _validate_response_transition(old: str, new: str) -> None:
         allowed = {
-            MidwifeSchedule.ResponseStatus.SCHEDULED: {
-                MidwifeSchedule.ResponseStatus.CONFIRMED,
-                MidwifeSchedule.ResponseStatus.CANCELLED,
+            MidwifeScheduleResponse.ResponseStatus.SCHEDULED: {
+                MidwifeScheduleResponse.ResponseStatus.CONFIRMED,
+                MidwifeScheduleResponse.ResponseStatus.CANCELLED,
             },
-            MidwifeSchedule.ResponseStatus.CONFIRMED: {
-                MidwifeSchedule.ResponseStatus.CANCELLED,
+            MidwifeScheduleResponse.ResponseStatus.CONFIRMED: {
+                MidwifeScheduleResponse.ResponseStatus.CANCELLED,
             },
-            MidwifeSchedule.ResponseStatus.CANCELLED: set(),
+            MidwifeScheduleResponse.ResponseStatus.CANCELLED: set(),
         }
         if new == old:
             return
@@ -214,7 +250,14 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop("phm_area", None)
-        return super().create(validated_data)
+        validated_data.pop("response_status", None)
+        validated_data.pop("cancellation_reason", None)
+        instance = super().create(validated_data)
+        MidwifeScheduleResponse.objects.create(
+            schedule=instance,
+            response_status=MidwifeScheduleResponse.ResponseStatus.SCHEDULED,
+        )
+        return instance
 
     def update(self, instance: MidwifeSchedule, validated_data: Dict[str, Any]):
         request = self.context.get("request")
@@ -223,32 +266,34 @@ class MidwifeScheduleSerializer(serializers.ModelSerializer):
 
         validated_data.pop("phm_area", None)
 
-        if role == UserRole.MOTHER:
-            validated_data = {
-                k: v for k, v in validated_data.items() if k in ("response_status", "cancellation_reason")
-            }
+        resp_status = validated_data.pop("response_status", None)
+        cancellation_reason = validated_data.pop("cancellation_reason", None)
 
-        old_status = instance.response_status
-        new_status = validated_data.get("response_status", old_status)
+        if role == UserRole.MOTHER:
+            validated_data = {}
 
         instance = super().update(instance, validated_data)
 
-        now = timezone.now()
-        save_fields: list[str] = []
-        if (
-            new_status == MidwifeSchedule.ResponseStatus.CONFIRMED
-            and old_status != MidwifeSchedule.ResponseStatus.CONFIRMED
-        ):
-            instance.confirmed_at = now
-            save_fields.append("confirmed_at")
-        if (
-            new_status == MidwifeSchedule.ResponseStatus.CANCELLED
-            and old_status != MidwifeSchedule.ResponseStatus.CANCELLED
-        ):
-            instance.cancelled_at = now
-            instance.cancelled_by = user
-            save_fields.extend(["cancelled_at", "cancelled_by"])
-        if save_fields:
-            instance.save(update_fields=save_fields)
+        meta = self._schedule_response(instance)
+        old_status = meta.response_status
 
+        now = timezone.now()
+        if resp_status is not None:
+            meta.response_status = resp_status
+        if cancellation_reason is not None:
+            meta.cancellation_reason = cancellation_reason
+
+        if (
+            meta.response_status == MidwifeScheduleResponse.ResponseStatus.CONFIRMED
+            and old_status != MidwifeScheduleResponse.ResponseStatus.CONFIRMED
+        ):
+            meta.confirmed_at = now
+        if (
+            meta.response_status == MidwifeScheduleResponse.ResponseStatus.CANCELLED
+            and old_status != MidwifeScheduleResponse.ResponseStatus.CANCELLED
+        ):
+            meta.cancelled_at = now
+            meta.cancelled_by = user
+
+        meta.save()
         return instance

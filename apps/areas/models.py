@@ -58,13 +58,6 @@ class PHMArea(models.Model):
 
 # --- Midwife Schedule Model ---
 class MidwifeSchedule(models.Model):
-    class ResponseStatus(models.TextChoices):
-        """Mother or midwife can confirm or cancel an entry."""
-
-        SCHEDULED = "scheduled", "Scheduled"
-        CONFIRMED = "confirmed", "Confirmed"
-        CANCELLED = "cancelled", "Cancelled"
-
     SCHEDULE_TYPE_CHOICES = [
         ("Clinic", "Clinic"),
         ("Home Visit", "Home Visit"),
@@ -81,6 +74,29 @@ class MidwifeSchedule(models.Model):
     date = models.DateField()
     time = models.TimeField()
     location = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "midwife_schedules"
+        ordering = ["-date", "-time"]
+
+    def __str__(self):
+        return f"{self.midwife} - {self.type} on {self.date} at {self.time} in {self.location}"
+
+
+# --- Confirm / cancel lives in a separate table (avoids ALTER on drifted MySQL `midwife_schedules`) ---
+class MidwifeScheduleResponse(models.Model):
+    class ResponseStatus(models.TextChoices):
+        SCHEDULED = "scheduled", "Scheduled"
+        CONFIRMED = "confirmed", "Confirmed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    schedule = models.OneToOneField(
+        MidwifeSchedule,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name="response_detail",
+    )
     response_status = models.CharField(
         max_length=20,
         choices=ResponseStatus.choices,
@@ -96,11 +112,10 @@ class MidwifeSchedule(models.Model):
         related_name="schedules_cancelled",
     )
     cancellation_reason = models.CharField(max_length=500, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "midwife_schedules"
-        ordering = ["-date", "-time"]
+        db_table = "midwife_schedule_responses"
+        ordering = ["schedule"]
 
-    def __str__(self):
-        return f"{self.midwife} - {self.type} on {self.date} at {self.time} in {self.location}"
+    def __str__(self) -> str:
+        return f"{self.schedule_id}: {self.response_status}"

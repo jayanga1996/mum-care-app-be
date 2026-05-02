@@ -127,7 +127,9 @@ class MidwifeScheduleViewSet(viewsets.ModelViewSet):
         - Sister: can read schedules (optionally filter by ?midwife=<uuid>) but cannot create/update/delete
         """
         user = self.request.user
-        base = MidwifeSchedule.objects.select_related("midwife", "cancelled_by")
+        base = MidwifeSchedule.objects.select_related(
+            "midwife", "response_detail", "response_detail__cancelled_by"
+        )
 
         if user.role == UserRole.MIDWIFE:
             return base.filter(midwife=user)
@@ -190,7 +192,7 @@ class MidwifeScheduleByMidwifeListView(generics.ListAPIView):
                 return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
 
         schedules = MidwifeSchedule.objects.filter(midwife_id=midwife).select_related(
-            "midwife", "cancelled_by"
+            "midwife", "response_detail", "response_detail__cancelled_by"
         )
         if user.role == UserRole.MOTHER:
             phm = user.phm_area
@@ -214,7 +216,9 @@ class MyScheduleListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        base = MidwifeSchedule.objects.select_related("midwife", "cancelled_by")
+        base = MidwifeSchedule.objects.select_related(
+            "midwife", "response_detail", "response_detail__cancelled_by"
+        )
 
         if user.role == UserRole.MIDWIFE:
             return base.filter(midwife=user)

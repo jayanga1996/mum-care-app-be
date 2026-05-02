@@ -1,9 +1,9 @@
 """
-Manual repair when `response_status` (or related columns) is missing on MySQL.
+Legacy MySQL repair for old columns on midwife_schedules (pre–0013).
+
+Current code stores status in `midwife_schedule_responses` — run `migrate` first.
 
   python manage.py repair_schedule_response_columns
-
-Uses the same DDL as migration 0012. Safe to run multiple times.
 """
 from django.core.management.base import BaseCommand
 from django.db import connection
