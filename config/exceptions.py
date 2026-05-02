@@ -4,6 +4,7 @@ DRF exception handler: ensure JSON responses for API routes instead of Django HT
 from __future__ import annotations
 
 import logging
+import re
 import traceback
 from typing import Optional
 
@@ -22,7 +23,7 @@ _MYSQL_DB_HINTS = {
     2003: "Cannot connect to MySQL: check DB_HOST, DB_PORT, MySQL is running, and firewall/security groups allow this host.",
     2013: "Lost connection to MySQL server during query (timeout / server restart / proxy).",
     1146: "Table does not exist: run `python manage.py migrate` on this server.",
-    1054: "Unknown column: run `python manage.py migrate`.",
+    1054: "Unknown column — schema out of date; see `unknown_column` in this response and follow `fix` if present.",
     1364: "Field doesn't have a default value: often fixed by running migrations.",
 }
 
@@ -44,6 +45,29 @@ def _database_error_hint(exc: BaseException) -> Optional[str]:
     if "can't connect" in msg or "could not connect" in msg:
         return "Cannot reach MySQL — check DB_HOST, DB_PORT, and that mysqld is listening."
     return "Database error — verify MySQL is up and .env DB_* values match this environment."
+
+
+def _parse_mysql_unknown_column(exc: BaseException) -> Optional[str]:
+    """Extract bare column name from MySQL error text (errno 1054)."""
+    text = str(exc)
+    m = re.search(r"Unknown column\s+['`]([^'`]+)['`]", text, re.I)
+    if not m:
+        return None
+    raw = m.group(1).strip()
+    # May be `table.column` or `db`.`table`.`column`
+    if "." in raw:
+        return raw.split(".")[-1]
+    return raw
+
+
+def _fix_hint_for_unknown_column(column: str) -> Optional[str]:
+    if column == "phm_area_id":
+        return (
+            "Column belongs to migration areas/0005. If `migrate` says nothing to apply but "
+            "the column is missing, run on the server: python manage.py repair_midwife_phm_column "
+            "(see backend repo apps/areas/management/commands/)."
+        )
+    return None
 
 
 def api_exception_handler(exc, context):
@@ -73,5 +97,13 @@ def api_exception_handler(exc, context):
     hint = _database_error_hint(exc)
     if hint:
         body["hint"] = hint
+
+    if isinstance(exc, DjangoOperationalError):
+        uk = _parse_mysql_unknown_column(exc)
+        if uk:
+            body["unknown_column"] = uk
+            fix = _fix_hint_for_unknown_column(uk)
+            if fix:
+                body["fix"] = fix
 
     return Response(body, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
