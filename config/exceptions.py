@@ -76,7 +76,9 @@ def _fix_hint_for_unknown_column(column: str) -> Optional[str]:
     ):
         return (
             "Pull latest backend, then run: python manage.py migrate "
-            "(areas/0010 adds schedule status columns; areas/0011 repairs MySQL if they are missing)."
+            "(areas/0010–0012 add/repair schedule columns on MySQL). "
+            "If migrate says OK but the error persists: "
+            "python manage.py repair_schedule_response_columns"
         )
     return None
 
